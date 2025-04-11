@@ -51,15 +51,19 @@ az group create --name "$RG_NAME" --location "$LOCATION"
 
 # Generate a complex random password (16 chars, ensuring uppercase, lowercase, digit, special).
 generate_password() {
-  while true; do
-    # Adjust character set as needed. This includes uppercase, lowercase, digits, and some specials.
-    pass=$(< /dev/urandom tr -dc 'A-Za-z0-9@#$%&-+=' | head -c16)
-    # Check complexity: at least one uppercase, one lowercase, one digit, one special char
-    [[ $pass =~ [A-Z] ]] && [[ $pass =~ [a-z] ]] && [[ $pass =~ [0-9] ]] && [[ $pass =~ [@#$%&\-\+=] ]] && {
-      echo "$pass"
-      return
-    }
+  # Simpler implementation using built-in tools
+  local chars='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%&-+='
+  local password=""
+  
+  # Generate a 16-character password
+  for ((i=0; i<16; i++)); do
+    password+="${chars:RANDOM%${#chars}:1}"
   done
+  
+  # Ensure complexity requirements by adding specific character types
+  password="${password:0:12}A1@z"
+  
+  echo "$password"
 }
 
 ADMIN_PASSWORD=$(generate_password)
