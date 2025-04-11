@@ -14,11 +14,28 @@ if ! az account show &> /dev/null; then
 fi
 
 echo "Retrieving your Azure subscriptions..."
-# Get subscriptions in a more robust way
-SUBS_JSON=$(az account list --output json)
+# Get subscriptions with cloud environment info
+SUBS_JSON=$(az account list --query "[].{name:name, id:id, state:state, cloudName:environmentName}" --output json)
 if [ -z "$SUBS_JSON" ]; then
     echo "No Azure subscriptions found. Please login with 'az login' first."
     exit 1
+fi
+
+# Check if user needs to specify cloud environment
+CLOUD_ENV=$(az cloud show --query "name" -o tsv 2>/dev/null)
+echo "Current cloud environment: $CLOUD_ENV"
+
+# List available cloud environments if the current one is not AzureCloud
+if [ "$CLOUD_ENV" != "AzureCloud" ]; then
+    echo "Note: You're not using the default AzureCloud environment."
+    echo "Available cloud environments:"
+    az cloud list --query "[].{Name:name, IsActive:isActive}" -o table
+    echo "To switch cloud environments: az cloud set --name <cloud-name>"
+    read -rp "Continue with current cloud environment? (y/n): " CONTINUE_CLOUD
+    if [[ "${CONTINUE_CLOUD,,}" != "y" ]]; then
+        echo "Exiting. Please set the desired cloud environment and try again."
+        exit 0
+    fi
 fi
 
 # Count subscriptions using jq if available, otherwise fallback to grep
@@ -38,13 +55,13 @@ echo "Select a subscription by number:"
 i=1
 declare -A SUB_MAP
 
-# Use jq if available for better parsing
+    # Use jq if available for better parsing
 if command -v jq &> /dev/null; then
-    while read -r name id; do
-        echo "$i) $name ($id)"
+    while read -r name id cloud state; do
+        echo "$i) $name ($id) - [$cloud] - $state"
         SUB_MAP[$i]="$id"
         ((i++))
-    done < <(echo "$SUBS_JSON" | jq -r '.[] | "\(.name) \(.id)"')
+    done < <(echo "$SUBS_JSON" | jq -r '.[] | "\(.name) \(.id) \(.cloudName) \(.state)"')
 else
     # Fallback to basic parsing if jq not available
     while read -r line; do
@@ -52,12 +69,23 @@ else
             name="${BASH_REMATCH[1]}"
             if [[ $line =~ \"id\":\ \"([^\"]+)\" ]]; then
                 id="${BASH_REMATCH[1]}"
-                echo "$i) $name ($id)"
+                # Try to get cloud name and state
+                if [[ $line =~ \"cloudName\":\ \"([^\"]+)\" ]]; then
+                    cloud="${BASH_REMATCH[1]}"
+                else
+                    cloud="unknown"
+                fi
+                if [[ $line =~ \"state\":\ \"([^\"]+)\" ]]; then
+                    state="${BASH_REMATCH[1]}"
+                else
+                    state="unknown"
+                fi
+                echo "$i) $name ($id) - [$cloud] - $state"
                 SUB_MAP[$i]="$id"
                 ((i++))
             fi
         fi
-    done < <(echo "$SUBS_JSON" | grep -E "\"name\"|\"id\"")
+    done < <(echo "$SUBS_JSON" | grep -E "\"name\"|\"id\"|\"cloudName\"|\"state\"")
 fi
 
 read -rp "Enter a number: " SUB_CHOICE
@@ -69,7 +97,31 @@ if [ -z "$SELECTED_SUB" ]; then
 fi
 
 echo "Setting subscription to: $SELECTED_SUB"
-az account set --subscription "$SELECTED_SUB"
+if ! az account set --subscription "$SELECTED_SUB" 2>/dev/null; then
+    # Try refreshing the account list first
+    echo "Unable to set subscription. Refreshing account list..."
+    az account clear
+    az login --only-show-subscriptions
+    
+    # Try again after refresh
+    if ! az account set --subscription "$SELECTED_SUB" 2>/dev/null; then
+        echo "Error: Still unable to set subscription. This could be due to:"
+        echo "1. The subscription belongs to a different tenant"
+        echo "2. You need to use a specific cloud environment"
+        
+        # Show available clouds and current cloud
+        echo "Current cloud: $(az cloud show --query name -o tsv)"
+        echo "Available clouds:"
+        az cloud list --query "[].name" -o tsv
+        
+        read -rp "Would you like to try a different subscription? (y/n): " TRY_AGAIN
+        if [[ "${TRY_AGAIN,,}" == "y" ]]; then
+            ./deploy.sh
+            exit 0
+        fi
+        exit 1
+    fi
+fi
 
 # Get resource group name
 while true; do
