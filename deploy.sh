@@ -39,6 +39,12 @@ if [ -z "$RG_NAME" ]; then
   exit 1
 fi
 
+read -rp "Enter the new Azure DNS name: " DNS_NAME
+if [ -z "$DNS_NAME" ]; then
+  echo "Azure DNS name cannot be empty."
+  exit 1
+fi
+
 LOCATION="westus2"
 echo "Creating resource group '$RG_NAME' in $LOCATION ..."
 az group create --name "$RG_NAME" --location "$LOCATION"
@@ -65,7 +71,7 @@ az deployment group create \
   --name CriblFipsDeploy \
   --template-uri "https://raw.githubusercontent.com/DataGuys/CriblinAzure/refs/heads/main/main.bicep" \
   --parameters location="$LOCATION" \
-               dnsLabelPrefix="mycriblfipslabel" \
+               dnsLabelPrefix="$DNS_NAME" \
                adminUsername="azureuser" \
                adminPassword="$ADMIN_PASSWORD"
 
