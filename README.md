@@ -2,7 +2,6 @@
 FIPS Compliant Cribl Build in Auzre
 
 ```bash
-# Run this from Azure Cloud Shell
-curl -sSL https://raw.githubusercontent.com/DataGuys/CriblinAzure/refs/heads/main/deploy.sh | bash
+curl -sSL "https://raw.githubusercontent.com/DataGuys/CriblinAzure/main/deploy.sh" -o deploy.sh && chmod +x deploy.sh && ./deploy.sh
 
 ```
