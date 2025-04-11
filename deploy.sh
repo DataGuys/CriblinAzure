@@ -49,7 +49,7 @@ echo "Starting deployment..."
 az deployment group create \
   --resource-group "$RG_NAME" \
   --name CriblFipsDeploy \
-  --template-uri "https://raw.githubusercontent.com/DataGuys/CriblinAzure/main/main.bicep" \
+  --template-uri "https://raw.githubusercontent.com/DataGuys/CriblinAzure/refs/heads/main/main.bicep" \
   --parameters location="$LOCATION" \
                dnsLabelPrefix="mycriblfipslabel" \
                adminUsername="azureuser" \
