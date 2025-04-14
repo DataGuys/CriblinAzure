@@ -12,8 +12,32 @@ This project deploys a turnkey FIPS-compliant Cribl Stream environment on Azure 
 - Network security groups with properly configured access
 - Systemd service for reliable operation
 - Static IP for reliable DNS and certificate validation
+- Key Vault integration for secret management (optional)
+- Azure Monitor integration (optional)
+- Azure Backup support (optional)
+
+## Architecture
+
+![Cribl FIPS VM Architecture](./architecture.png)
 
 ## Quick Deployment
+
+### Option 1: Azure Cloud Shell (Recommended)
+
+For the easiest deployment experience, use Azure Cloud Shell:
+
+```bash
+# Run this one-liner in Azure Cloud Shell
+curl -sL https://raw.githubusercontent.com/DataGuys/CriblinAzure/main/cloudshell-install.sh | bash
+```
+
+This will:
+1. Clone the repository
+2. Set up the environment
+3. Walk you through deployment options
+4. Configure additional components as needed
+
+### Option 2: Standard Deployment
 
 ```bash
 # Clone the repository
@@ -47,6 +71,21 @@ The deployment script allows configuration of:
 - Cribl admin password
 - Optional Cribl license key
 
+## Post-Deployment Setup
+
+After deploying the VM, you can run additional setup tasks:
+
+```bash
+# Run the post-deployment script for monitoring and backup setup
+./post-deploy.sh <resource-group> <vm-name>
+```
+
+This script provides options to:
+1. Verify your deployment
+2. Configure monitoring with Azure Monitor
+3. Set up automated backups
+4. All of the above
+
 ## FIPS Compliance
 
 This deployment ensures FIPS 140-2/140-3 compliance through:
@@ -57,24 +96,6 @@ This deployment ensures FIPS 140-2/140-3 compliance through:
 - HTTPS-only access to UI components
 - Least-privilege security groups
 
-## Architecture
-
-```
-                  ┌──────────────────┐
-                  │                  │
-Internet ────────►│ Azure NSG        │
-                  │                  │
-                  └────────┬─────────┘
-                           │
-                           ▼
-                  ┌──────────────────┐
-                  │                  │
-                  │ Ubuntu FIPS VM   │
-                  │ (Cribl Stream)   │
-                  │                  │
-                  └──────────────────┘
-```
-
 ## SSL Certificate Management
 
 Let's Encrypt certificates are automatically:
@@ -84,7 +105,7 @@ Let's Encrypt certificates are automatically:
 - Set up for automatic renewal (twice daily checks)
 - Redeployed to Cribl when renewed
 
-## Post-Deployment
+## After Deployment
 
 After deployment:
 
@@ -92,38 +113,28 @@ After deployment:
 2. Access Cribl UI at https://your-domain-name:9000
 3. Log in with username "admin" and the password you provided during deployment
 
-## Customization
+## Alternative Deployment Methods
 
-The Bicep template supports several parameters for customization:
+### Terraform
 
-- `vmSize`: VM size (default: Standard_B2ms)
-- `criblVersion`: Cribl Stream version
-- `criblMode`: Stream or Edge mode
-- `criblAdminUsername`: Admin username (default: admin)
-
-## Troubleshooting
-
-### Certificate Issues
-
-If Let's Encrypt fails to obtain a certificate:
-
-1. Verify your DNS records are correctly pointing to the VM's public IP
-2. Check the certificate logs: `sudo certbot certificates`
-3. View detailed logs: `sudo journalctl -u certbot`
-
-### Cribl Service Issues
-
-To check Cribl service status:
+For teams using Terraform instead of Bicep:
 
 ```bash
-sudo systemctl status cribl
+# Initialize Terraform
+terraform init
+
+# Plan the deployment
+terraform plan -out tfplan
+
+# Apply the deployment
+terraform apply tfplan
 ```
 
-View Cribl logs:
+## Documentation
 
-```bash
-sudo cat /opt/cribl-stream/log/worker.log
-```
+- **[CONFIGURATION.md](./CONFIGURATION.md)** - Detailed configuration options
+- **[BEST_PRACTICES.md](./BEST_PRACTICES.md)** - Deployment patterns and best practices
+- **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** - Solutions for common issues
 
 ## License
 
