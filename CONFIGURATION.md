@@ -28,6 +28,10 @@ The Bicep template supports the following parameters for customization:
 | `criblLicenseKey` | Cribl License Key | (Optional) |
 | `dnsName` | DNS Name for Let's Encrypt SSL | (Required) |
 | `emailAddress` | Email for Let's Encrypt SSL | (Required) |
+| `criblFipsMode` | Enable FIPS mode for Cribl | `true` |
+| `addDataDisk` | Add data disk for Cribl persistence | `true` |
+| `dataDiskSizeGB` | Data disk size in GB | `128` |
+| `configScriptUri` | URI for the configuration script | Repository URL |
 
 ## VM Sizing Recommendations
 
