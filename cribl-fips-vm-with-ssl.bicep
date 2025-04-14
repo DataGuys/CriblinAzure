@@ -43,6 +43,15 @@ param criblArch string = 'linux-x64'
 @description('Cribl Mode (stream or edge)')
 param criblMode string = 'stream'
 
+@description('Enable FIPS mode for Cribl')
+param criblFipsMode bool = true
+
+@description('Add data disk for Cribl persistence')
+param addDataDisk bool = true
+
+@description('Data disk size in GB')
+param dataDiskSizeGB int = 128
+
 @description('Cribl Admin Password')
 @secure()
 param criblAdminPassword string
@@ -59,6 +68,9 @@ param dnsName string
 
 @description('Email for Let\'s Encrypt SSL certificate')
 param emailAddress string
+
+@description('Configure Script URI')
+param configScriptUri string = 'https://raw.githubusercontent.com/DataGuys/CriblinAzure/main/configure-cribl.sh'
 
 // Resource: Network Security Group
 resource nsg 'Microsoft.Network/networkSecurityGroups@2021-05-01' = {
@@ -146,7 +158,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2021-05-01' = {
   }
 }
 
-// Resource: Public IP Address - Changed to Static
+// Resource: Public IP Address - Static for reliable DNS validation
 resource publicIP 'Microsoft.Network/publicIPAddresses@2021-05-01' = {
   name: publicIpName
   location: location
@@ -181,6 +193,21 @@ resource nic 'Microsoft.Network/networkInterfaces@2021-05-01' = {
   dependsOn: [
     vnet
   ]
+}
+
+// Optional: Data Disk for Cribl persistence
+resource dataDisk 'Microsoft.Compute/disks@2021-04-01' = if (addDataDisk) {
+  name: '${vmName}-datadisk'
+  location: location
+  properties: {
+    creationData: {
+      createOption: 'Empty'
+    }
+    diskSizeGB: dataDiskSizeGB
+  }
+  sku: {
+    name: 'Standard_LRS'
+  }
 }
 
 // Resource: Virtual Machine
@@ -220,6 +247,15 @@ resource vm 'Microsoft.Compute/virtualMachines@2021-07-01' = {
           storageAccountType: 'Standard_LRS'
         }
       }
+      dataDisks: addDataDisk ? [
+        {
+          managedDisk: {
+            id: dataDisk.id
+          }
+          lun: 0
+          createOption: 'Attach'
+        }
+      ] : []
     }
     networkProfile: {
       networkInterfaces: [
@@ -241,9 +277,9 @@ resource customScriptExtension 'Microsoft.Compute/virtualMachines/extensions@202
     typeHandlerVersion: '2.1'
     autoUpgradeMinorVersion: true
     protectedSettings: {
-      commandToExecute: 'bash /var/lib/waagent/custom-script/download/0/configure-cribl.sh "${criblDownloadUrl}" "${criblVersion}" "${criblMode}" "${criblAdminUsername}" "${criblAdminPassword}" "${dnsName}" "${emailAddress}" "${criblLicenseKey}"'
+      commandToExecute: 'bash /var/lib/waagent/custom-script/download/0/configure-cribl.sh "${criblDownloadUrl}" "${criblVersion}" "${criblMode}" "${criblAdminUsername}" "${criblAdminPassword}" "${dnsName}" "${emailAddress}" "${criblLicenseKey}" "${criblFipsMode}" "${addDataDisk}"'
       fileUris: [
-        'https://raw.githubusercontent.com/username/repo/main/configure-cribl.sh'
+        configScriptUri
       ]
     }
   }
@@ -255,4 +291,4 @@ resource customScriptExtension 'Microsoft.Compute/virtualMachines/extensions@202
 // Output the Public IP and FQDN
 output publicIPAddress string = publicIP.properties.ipAddress
 output fqdn string = publicIP.properties.dnsSettings.fqdn
-output criblUIUrl string = 'https://${dnsName}'
+output criblUIUrl string = 'https://${dnsName}:9000'
