@@ -217,19 +217,23 @@ deploy() {
     echo "Deploying Cribl FIPS VM with Let's Encrypt SSL..."
     DEPLOYMENT_START_TIME=$(date +%s)
     
-    az deployment group create \
-      --resource-group "$RESOURCE_GROUP" \
-      --template-file cribl-fips-vm-with-ssl.bicep \
-      --parameters \
-        vmName="$VM_NAME" \
-        adminUsername="$ADMIN_USERNAME" \
-        sshPublicKey="$SSH_PUBLIC_KEY" \
-        dnsName="$DNS_NAME" \
-        emailAddress="$EMAIL_ADDRESS" \
-        vmSize="$VM_SIZE" \
-        criblMode="$CRIBL_MODE" \
-        criblAdminPassword="$CRIBL_ADMIN_PASSWORD" \
-        criblLicenseKey="$CRIBL_LICENSE_KEY"
+    # Add these parameters to the deployment command
+az deployment group create \
+  --resource-group "$RESOURCE_GROUP" \
+  --template-file cribl-fips-vm-with-ssl.bicep \
+  --parameters \
+    vmName="$VM_NAME" \
+    adminUsername="$ADMIN_USERNAME" \
+    sshPublicKey="$SSH_PUBLIC_KEY" \
+    dnsName="$DNS_NAME" \
+    emailAddress="$EMAIL_ADDRESS" \
+    vmSize="$VM_SIZE" \
+    criblMode="$CRIBL_MODE" \
+    criblAdminPassword="$CRIBL_ADMIN_PASSWORD" \
+    criblLicenseKey="$CRIBL_LICENSE_KEY" \
+    criblFipsMode=true \
+    addDataDisk=true \
+    configScriptUri="https://raw.githubusercontent.com/DataGuys/CriblinAzure/main/configure-cribl.sh"
     
     DEPLOYMENT_END_TIME=$(date +%s)
     DEPLOYMENT_DURATION=$((DEPLOYMENT_END_TIME - DEPLOYMENT_START_TIME))
