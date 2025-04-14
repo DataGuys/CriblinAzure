@@ -67,6 +67,14 @@ check_prerequisites() {
         exit 1
     fi
     
+    # Check if key vault module exists
+    if [ ! -f "key-vault-module.bicep" ]; then
+        echo "${YELLOW}Warning: 'key-vault-module.bicep' not found. Key Vault integration will be disabled.${RESET}"
+        USE_KEY_VAULT=false
+    else
+        echo "${GREEN}✓ Key Vault module found${RESET}"
+    fi
+    
     echo "${GREEN}✓ All prerequisites met${RESET}"
 }
 
@@ -79,6 +87,7 @@ DNS_NAME=""
 EMAIL_ADDRESS=""
 VM_SIZE="Standard_B2ms"
 CRIBL_MODE="stream"
+USE_KEY_VAULT=true
 
 # Generate SSH key if it doesn't exist (or use existing)
 SSH_KEY_PATH="$HOME/.ssh/id_rsa"
@@ -154,6 +163,18 @@ configure() {
     fi
     SSH_PUBLIC_KEY=$(cat "$SSH_KEY_PATH.pub")
     
+    # Ask about using Key Vault
+    if [ -f "key-vault-module.bicep" ]; then
+        read -p "Use Azure Key Vault for secret management? (y/n) [y]: " USE_KEY_VAULT_INPUT
+        if [[ "$USE_KEY_VAULT_INPUT" =~ ^[Nn]$ ]]; then
+            USE_KEY_VAULT=false
+        else
+            USE_KEY_VAULT=true
+        fi
+    else
+        USE_KEY_VAULT=false
+    fi
+    
     # Cribl admin password
     while true; do
         read -sp "Enter Cribl Admin Password: " CRIBL_ADMIN_PASSWORD
@@ -188,6 +209,7 @@ configure() {
     echo "  DNS Name: $DNS_NAME"
     echo "  Cribl Mode: $CRIBL_MODE"
     echo "  SSH Key: $SSH_KEY_PATH"
+    echo "  Use Key Vault: $([ "$USE_KEY_VAULT" = true ] && echo "Yes" || echo "No")"
     echo
     
     # Confirm deployment
@@ -213,27 +235,64 @@ deploy() {
         echo "${GREEN}✓ Using existing resource group${RESET}"
     fi
     
+    # Create managed identity for VM if using Key Vault
+    IDENTITY_ID=""
+    IDENTITY_PRINCIPAL_ID=""
+    
+    if [ "$USE_KEY_VAULT" = true ]; then
+        echo "Creating user-assigned managed identity..."
+        IDENTITY_NAME="${VM_NAME}-identity"
+        
+        # Check if identity already exists
+        if az identity show --name "$IDENTITY_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+            echo "${GREEN}✓ Using existing managed identity${RESET}"
+        else
+            az identity create --name "$IDENTITY_NAME" --resource-group "$RESOURCE_GROUP" --location "$LOCATION"
+            echo "${GREEN}✓ Managed identity created${RESET}"
+        fi
+        
+        IDENTITY_ID=$(az identity show --name "$IDENTITY_NAME" --resource-group "$RESOURCE_GROUP" --query id -o tsv)
+        IDENTITY_PRINCIPAL_ID=$(az identity show --name "$IDENTITY_NAME" --resource-group "$RESOURCE_GROUP" --query principalId -o tsv)
+    fi
+    
     # Deploy Bicep template
     echo "Deploying Cribl FIPS VM with Let's Encrypt SSL..."
     DEPLOYMENT_START_TIME=$(date +%s)
     
-    # Add these parameters to the deployment command
-az deployment group create \
-  --resource-group "$RESOURCE_GROUP" \
-  --template-file cribl-fips-vm-with-ssl.bicep \
-  --parameters \
-    vmName="$VM_NAME" \
-    adminUsername="$ADMIN_USERNAME" \
-    sshPublicKey="$SSH_PUBLIC_KEY" \
-    dnsName="$DNS_NAME" \
-    emailAddress="$EMAIL_ADDRESS" \
-    vmSize="$VM_SIZE" \
-    criblMode="$CRIBL_MODE" \
-    criblAdminPassword="$CRIBL_ADMIN_PASSWORD" \
-    criblLicenseKey="$CRIBL_LICENSE_KEY" \
-    criblFipsMode=true \
-    addDataDisk=true \
-    configScriptUri="https://raw.githubusercontent.com/DataGuys/CriblinAzure/main/configure-cribl.sh"
+    # Create the deployment parameters array
+    PARAMS=(
+        vmName="$VM_NAME"
+        adminUsername="$ADMIN_USERNAME"
+        sshPublicKey="$SSH_PUBLIC_KEY"
+        dnsName="$DNS_NAME"
+        emailAddress="$EMAIL_ADDRESS"
+        vmSize="$VM_SIZE"
+        criblMode="$CRIBL_MODE"
+        criblAdminPassword="$CRIBL_ADMIN_PASSWORD"
+        criblLicenseKey="$CRIBL_LICENSE_KEY"
+        criblFipsMode=true
+        addDataDisk=true
+        configScriptUri="https://raw.githubusercontent.com/DataGuys/CriblinAzure/main/configure-cribl.sh"
+    )
+    
+    # Add Key Vault parameters if enabled
+    if [ "$USE_KEY_VAULT" = true ]; then
+        PARAMS+=(
+            useKeyVault=true
+            managedIdentityId="$IDENTITY_ID"
+            managedIdentityPrincipalId="$IDENTITY_PRINCIPAL_ID"
+        )
+    fi
+    
+    # Convert params array to --parameters format
+    PARAMS_STR=""
+    for param in "${PARAMS[@]}"; do
+        PARAMS_STR="$PARAMS_STR --parameters $param"
+    done
+    
+    # Run the deployment
+    DEPLOYMENT_CMD="az deployment group create --resource-group \"$RESOURCE_GROUP\" --template-file cribl-fips-vm-with-ssl.bicep $PARAMS_STR"
+    eval $DEPLOYMENT_CMD
     
     DEPLOYMENT_END_TIME=$(date +%s)
     DEPLOYMENT_DURATION=$((DEPLOYMENT_END_TIME - DEPLOYMENT_START_TIME))
@@ -256,6 +315,25 @@ az deployment group create \
     echo "  VM Public IP: $VM_PUBLIC_IP"
     echo "  VM FQDN: $VM_FQDN"
     echo "  Cribl UI URL: https://$DNS_NAME:9000"
+    
+    if [ "$USE_KEY_VAULT" = true ]; then
+        KV_NAME=$(az keyvault list -g "$RESOURCE_GROUP" --query "[0].name" -o tsv 2>/dev/null || echo "Unknown")
+        echo "  Key Vault: $KV_NAME"
+    fi
+    
+    # Save outputs to file for post-deployment scripts
+    {
+        echo "RESOURCE_GROUP=$RESOURCE_GROUP"
+        echo "VM_NAME=$VM_NAME"
+        echo "VM_PUBLIC_IP=$VM_PUBLIC_IP"
+        echo "VM_FQDN=$VM_FQDN"
+        echo "DNS_NAME=$DNS_NAME"
+        echo "LOCATION=$LOCATION"
+        if [ "$USE_KEY_VAULT" = true ]; then
+            echo "KEY_VAULT_NAME=$KV_NAME"
+        fi
+    } > deploy-output.txt
+    
     echo
     echo "${BOLD}${YELLOW}IMPORTANT DNS CONFIGURATION:${RESET}"
     echo "Create an A record for $DNS_NAME pointing to $VM_PUBLIC_IP"
@@ -270,6 +348,8 @@ az deployment group create \
     echo "   Login with: admin / [your password]"
     echo
     echo "4. Verify deployment with: ./verify-deployment.sh $RESOURCE_GROUP $VM_NAME"
+    echo
+    echo "5. Run post-deployment setup with: ./post-deploy.sh $RESOURCE_GROUP $VM_NAME"
     echo
     echo "${GREEN}${BOLD}Deployment complete!${RESET}"
 }
