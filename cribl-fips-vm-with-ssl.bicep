@@ -72,6 +72,15 @@ param emailAddress string
 @description('Configure Script URI')
 param configScriptUri string = 'https://raw.githubusercontent.com/DataGuys/CriblinAzure/main/configure-cribl.sh'
 
+@description('Use Key Vault for secrets')
+param useKeyVault bool = false
+
+@description('Managed Identity ID for VM')
+param managedIdentityId string = ''
+
+@description('Managed Identity Principal ID')
+param managedIdentityPrincipalId string = ''
+
 // Resource: Network Security Group
 resource nsg 'Microsoft.Network/networkSecurityGroups@2021-05-01' = {
   name: nsgName
@@ -214,6 +223,12 @@ resource dataDisk 'Microsoft.Compute/disks@2021-04-01' = if (addDataDisk) {
 resource vm 'Microsoft.Compute/virtualMachines@2021-07-01' = {
   name: vmName
   location: location
+  identity: useKeyVault ? {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${managedIdentityId}': {}
+    }
+  } : null
   properties: {
     hardwareProfile: {
       vmSize: vmSize
@@ -267,6 +282,17 @@ resource vm 'Microsoft.Compute/virtualMachines@2021-07-01' = {
   }
 }
 
+// Add Key Vault module if enabled
+module keyVault './key-vault-module.bicep' = if (useKeyVault) {
+  name: 'keyVaultDeployment'
+  params: {
+    location: location
+    vmIdentityObjectId: managedIdentityPrincipalId
+    criblAdminPassword: criblAdminPassword
+    criblLicenseKey: criblLicenseKey
+  }
+}
+
 // Resource: Custom Script Extension to configure Cribl with SSL
 resource customScriptExtension 'Microsoft.Compute/virtualMachines/extensions@2021-07-01' = {
   name: '${vmName}/CustomScript'
@@ -292,3 +318,4 @@ resource customScriptExtension 'Microsoft.Compute/virtualMachines/extensions@202
 output publicIPAddress string = publicIP.properties.ipAddress
 output fqdn string = publicIP.properties.dnsSettings.fqdn
 output criblUIUrl string = 'https://${dnsName}:9000'
+output keyVaultName string = useKeyVault ? keyVault.outputs.keyVaultName : 'Not deployed'
