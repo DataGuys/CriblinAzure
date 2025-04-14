@@ -1,0 +1,42 @@
+name: Validate Bicep Templates and Bash Scripts
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  validate-bicep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Install Bicep CLI
+        run: |
+          curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64
+          chmod +x ./bicep
+          sudo mv ./bicep /usr/local/bin/bicep
+          bicep --version
+      
+      - name: Validate Bicep templates
+        run: |
+          bicep build cribl-fips-vm-with-ssl.bicep
+  
+  lint-bash-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+      
+      - name: Run shellcheck on deployment script
+        run: shellcheck deploy-cribl-fips.sh
+      
+      - name: Run shellcheck on verify script
+        run: shellcheck verify-deployment.sh
+      
+      - name: Run shellcheck on custom script
+        run: shellcheck scripts/custom-script.sh
